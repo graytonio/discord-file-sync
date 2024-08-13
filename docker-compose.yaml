@@ -2,16 +2,28 @@ services:
   server:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
       target: final
     env_file:
       - .env
+    environment:
+      MYSQL_DB_DSN: discordgit:password@tcp(db:3306)/discordgit?charset=utf8mb4&parseTime=True&loc=UTC
     ports:
       - 2112:2112
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: mysql:latest
     restart: always
+    ports:
+      - 3306:3306
     environment:
-      MYSQL_ROOT_PASSWORD: passowrd
+      MYSQL_ROOT_PASSWORD: password
       MYSQL_USER: discordgit
       MYSQL_PASSWORD: password
+      MYSQL_DATABASE: discordgit
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10

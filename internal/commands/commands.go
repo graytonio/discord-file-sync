@@ -3,6 +3,7 @@ package commands
 import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type SlashCommand interface {
@@ -10,14 +11,21 @@ type SlashCommand interface {
 	GetHandler() func(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
 
-var commands = []SlashCommand{
-	&LinkCommand{},
-}
-
 var commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){}
 
-func CreateCommands(s *discordgo.Session, guildID string) error {
-	for _, v := range commands {
+func buildCommands(db *gorm.DB) []SlashCommand {
+	return []SlashCommand{
+		&LinkCommand{
+			db: db,
+		},
+		&UpdateCommand{
+			db: db,
+		},
+	}
+}
+
+func CreateCommands(s *discordgo.Session, db *gorm.DB, guildID string) error {
+	for _, v := range buildCommands(db) {
 		logrus.WithField("command", v.GetDefinition().Name).Debug("creating command")
 		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, guildID, v.GetDefinition())
 		if err != nil {

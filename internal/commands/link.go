@@ -2,11 +2,14 @@ package commands
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/graytonio/discord-git-sync/internal/db"
 	"github.com/graytonio/discord-git-sync/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +22,7 @@ var _ SlashCommand = &LinkCommand{}
 // GetDefinition implements SlashCommand.
 func (l *LinkCommand) GetDefinition() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
-		Name:        "link",
+		Name:        "link-message",
 		Description: "Link a github file to a new discord message",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
@@ -35,21 +38,51 @@ func (l *LinkCommand) GetDefinition() *discordgo.ApplicationCommand {
 // GetHandler implements SlashCommand.
 func (l *LinkCommand) GetHandler() func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		logrus.WithField("user", i.Member.User.ID).WithField("guild", i.GuildID).Info("Creating new git link")
+		log := logrus.WithField("user", i.Member.User.ID).WithField("guild", i.GuildID).WithField("interaction_id", i.Interaction.ID)
+		log.Info("linking new webpage")
 
-		// TODO Fetch data from link
+		opts := commandOptionsToMap(i.ApplicationCommandData().Options)
 
-		msg, err := s.ChannelMessageSend(i.ChannelID, "New GitHub Message!")
+		parsedURL, err := url.ParseRequestURI(opts["link"].StringValue())
 		if err != nil {
-			metrics.CommandsFailed.With(prometheus.Labels{"command": "link"}).Inc()
-			logrus.WithError(err).Error("could not send new linked message")
-			err = l.SendErrorResponse(s, i)
-			if err != nil {
-				logrus.WithError(err).Error("could not respond to user")
-			}
+			log.WithError(err).Error("invalid link url")
+			l.sendErrorResponse(s, i, log, err)
+			return
 		}
 
-		// TODO Store message link in db
+		content, err := fetchPage(log, parsedURL)
+		if err != nil {
+			log.WithError(err).Error("could not get content to link")
+			l.sendErrorResponse(s, i, log, err)
+			return
+		}
+
+		msg, err := s.ChannelMessageSendEmbed(i.ChannelID, &discordgo.MessageEmbed{
+			Description: content,
+			Fields: []*discordgo.MessageEmbedField{
+				{
+					Name: "Source",
+					Value: parsedURL.String(),
+				},
+			},
+		})
+		if err != nil {
+			log.WithError(err).Error("could not send new linked message")
+			l.sendErrorResponse(s, i, log, err)
+			return
+		}
+
+		err = l.db.Create(&db.LinkedMessage{
+			GuildID:    i.GuildID,
+			ChannelID:  i.ChannelID,
+			MessageID:  msg.ID,
+			LinkedPage: datatypes.URL(*parsedURL),
+		}).Error
+		if err != nil {
+			log.WithError(err).Error("could not save message link")
+			l.sendErrorResponse(s, i, log, err)
+			return
+		}
 
 		err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -60,18 +93,26 @@ func (l *LinkCommand) GetHandler() func(s *discordgo.Session, i *discordgo.Inter
 		})
 		if err != nil {
 			metrics.CommandsFailed.With(prometheus.Labels{"command": "link"}).Inc()
-			logrus.WithError(err).Error("could not respond to user")
+			log.WithError(err).Error("could not respond to user")
+			return
 		}
 		metrics.CommandsServed.With(prometheus.Labels{"command": "link"}).Inc()
 	}
 }
 
-func (l *LinkCommand) SendErrorResponse(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+
+
+func (l *LinkCommand) sendErrorResponse(s *discordgo.Session, i *discordgo.InteractionCreate, log *logrus.Entry, err error) {
+	metrics.CommandsFailed.With(prometheus.Labels{"command": "link"}).Inc()
+
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: "There was a problem creating your linked git message",
+			Content: fmt.Sprintf("There was a problem creating your linked git message: %s", err.Error()),
 		},
 	})
+	if err != nil {
+		log.WithError(err).Error("could not respond to user")
+	}
 }

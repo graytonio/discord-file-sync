@@ -6,12 +6,18 @@ import (
 	"syscall"
 
 	"github.com/graytonio/discord-git-sync/internal/bot"
+	"github.com/graytonio/discord-git-sync/internal/db"
 	"github.com/graytonio/discord-git-sync/internal/metrics"
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	s, err := bot.InitBot(os.Getenv("DISCORD_BOT_TOKEN"), os.Getenv("TEST_GUILD_ID"))
+	dbConn, err := db.InitDB(os.Getenv("MYSQL_DB_DSN"))
+	if err != nil {
+	  logrus.WithError(err).Fatal("could not connect to db")
+	}
+
+	s, err := bot.InitBot(os.Getenv("DISCORD_BOT_TOKEN"), dbConn, os.Getenv("TEST_GUILD_ID"))
 	if err != nil {
 		logrus.WithError(err).Fatal("could not start bot")
 	}

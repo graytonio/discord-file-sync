@@ -1,0 +1,56 @@
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+builds:
+  - binary: discord-file-sync
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with the results of uname.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - LICENSE
+      - readme.md
+      - scripts/*.sh
+    # use zip for windows archives
+    format_overrides:
+    - goos: windows
+      format: zip
+docker_manifests:
+  - image_templates:
+      - ghcr.io/graytonio/discord-file-sync:{{.Version}}
+      - ghcr.io/graytonio/discord-file-sync:latest
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+  groups:
+    - title: New Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?bug(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+      
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
