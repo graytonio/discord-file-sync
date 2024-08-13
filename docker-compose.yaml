@@ -1,0 +1,17 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    env_file:
+      - .env
+    ports:
+      - 2112:2112
+  db:
+    image: mysql:latest
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: passowrd
+      MYSQL_USER: discordgit
+      MYSQL_PASSWORD: password
