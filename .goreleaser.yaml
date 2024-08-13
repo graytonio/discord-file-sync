@@ -22,12 +22,7 @@ archives:
     files:
       - LICENSE
       - readme.md
-      - scripts/*.sh
-    # use zip for windows archives
-    format_overrides:
-    - goos: windows
-      format: zip
-docker_manifests:
+dockers:
   - image_templates:
       - ghcr.io/graytonio/discord-file-sync:{{.Version}}
       - ghcr.io/graytonio/discord-file-sync:latest
