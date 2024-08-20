@@ -21,6 +21,9 @@ func buildCommands(db *gorm.DB) []SlashCommand {
 		&UpdateCommand{
 			db: db,
 		},
+		&SettingsCommand{
+			db: db,
+		},
 	}
 }
 

@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/graytonio/discord-git-sync/internal/db"
@@ -12,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type UpdateCommand struct{
+type UpdateCommand struct {
 	db *gorm.DB
 }
 
@@ -21,14 +23,14 @@ var _ SlashCommand = &UpdateCommand{}
 // GetDefinition implements SlashCommand.
 func (u *UpdateCommand) GetDefinition() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
-		Name: "update-message",
+		Name:        "update-message",
 		Description: "Update a linked message with the latest content",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
-				Name: "message",
+				Name:        "message",
 				Description: "Link to message to update",
-				Required: true,
-				Type: discordgo.ApplicationCommandOptionString,
+				Required:    true,
+				Type:        discordgo.ApplicationCommandOptionString,
 			},
 		},
 	}
@@ -37,16 +39,21 @@ func (u *UpdateCommand) GetDefinition() *discordgo.ApplicationCommand {
 // GetHandler implements SlashCommand.
 func (u *UpdateCommand) GetHandler() func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		log := logrus.WithField("user", i.Member.User.ID).WithField("guild", i.GuildID).WithField("interaction_id", i.Interaction.ID)
+		log := logrus.WithFields(logrus.Fields{
+			"command":        "update",
+			"user":           i.Member.User.ID,
+			"guild":          i.GuildID,
+			"interaction_id": i.ID,
+		})
 		log.Info("updating linked message")
 
 		opts := commandOptionsToMap(i.ApplicationCommandData().Options)
 
-		// TODO Preprocess message option to strip out message id
+		messageID := stripDiscordLinkMessageID(opts["message"].StringValue())
 
 		linkedMessage := db.LinkedMessage{}
 		err := u.db.Where(db.LinkedMessage{
-			MessageID: opts["message"].StringValue(),
+			MessageID: messageID,
 		}).First(&linkedMessage).Error
 		if err != nil {
 			log.WithError(err).Error("could not find linked message")
@@ -61,17 +68,63 @@ func (u *UpdateCommand) GetHandler() func(s *discordgo.Session, i *discordgo.Int
 			return
 		}
 
-		msg, err := s.ChannelMessageEditEmbed(linkedMessage.ChannelID, linkedMessage.MessageID, &discordgo.MessageEmbed{
-			Description: content,
-			Fields: []*discordgo.MessageEmbedField{
-				{
-					Name: "Source",
-					Value: linkedMessage.LinkedPage.String(),
-				},
-			},
-		})
+		setting := db.GuildSetting{Enabled: false} // Default to False
+		err = u.db.Where(&db.GuildSetting{GuildID: i.GuildID, Setting: db.PageBreakEnabled}).First(&setting).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.WithError(err).Error("could not fetch guild settings")
+			u.sendErrorResponse(s, i, log, err)
+			return
+		}
+
+		embeds, err := buildEmbedContents(content, (*url.URL)(&linkedMessage.LinkedPage), setting.Enabled)
 		if err != nil {
-			log.WithError(err).Error("could not update message content")
+			log.WithError(err).Error("could process link content")
+			u.sendErrorResponse(s, i, log, err)
+			return
+		}
+
+		msgIds := []string{}
+		for j, e := range embeds {
+			var msg *discordgo.Message
+			if j >= len(linkedMessage.MessageChain) {
+				msg, err = s.ChannelMessageSendEmbed(i.ChannelID, e)
+				if err != nil {
+					log.WithError(err).Error("could not send new linked message")
+					u.sendErrorResponse(s, i, log, err)
+					return
+				}
+
+			} else {
+				msg, err = s.ChannelMessageEditEmbed(linkedMessage.ChannelID, linkedMessage.MessageChain[j], e)
+				if err != nil {
+					log.WithError(err).Error("could not update message content")
+					u.sendErrorResponse(s, i, log, err)
+					return
+				}
+			}
+
+			msgIds = append(msgIds, msg.ID)
+		}
+
+		// Trims not needed messages
+		for _, m := range linkedMessage.MessageChain {
+			if slices.Contains(msgIds, m) {
+				continue
+			}
+
+			err = s.ChannelMessageDelete(linkedMessage.ChannelID, m)
+				if err != nil {
+					log.WithError(err).Error("could not update message content")
+					u.sendErrorResponse(s, i, log, err)
+					return
+				}
+		}
+
+		linkedMessage.MessageChain = msgIds
+		linkedMessage.MessageID = msgIds[0]
+		err = u.db.Save(&linkedMessage).Error
+		if err != nil {
+			log.WithError(err).Error("could not update message db record")
 			u.sendErrorResponse(s, i, log, err)
 			return
 		}
@@ -80,7 +133,7 @@ func (u *UpdateCommand) GetHandler() func(s *discordgo.Session, i *discordgo.Int
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Flags:   discordgo.MessageFlagsEphemeral,
-				Content: fmt.Sprintf("Message content updated: https://discord.com/channels/%s/%s/%s", linkedMessage.GuildID, linkedMessage.ChannelID, msg.ID),
+				Content: fmt.Sprintf("Message content updated: https://discord.com/channels/%s/%s/%s", linkedMessage.GuildID, linkedMessage.ChannelID, msgIds[0]),
 			},
 		})
 		if err != nil {

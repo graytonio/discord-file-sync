@@ -8,3 +8,4 @@ Roadmap:
 
 - [ ] Add automatic update timers
 - [ ] Support messages longer than 6000 characters
+- [ ] Support message links for update command
