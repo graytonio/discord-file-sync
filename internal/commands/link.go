@@ -1,16 +1,14 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/graytonio/discord-git-sync/internal/db"
+	"github.com/graytonio/discord-git-sync/internal/manager"
 	"github.com/graytonio/discord-git-sync/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -51,54 +49,16 @@ func (l *LinkCommand) GetHandler() func(s *discordgo.Session, i *discordgo.Inter
 
 		parsedURL, err := url.ParseRequestURI(opts["link"].StringValue())
 		if err != nil {
+			metrics.CommandsFailed.With(prometheus.Labels{"command": "link"}).Inc()
 			log.WithError(err).Error("invalid link url")
 			l.sendErrorResponse(s, i, log, err)
 			return
 		}
 
-		content, err := fetchPage(log, parsedURL)
+		msgID, err := manager.CreateNewLinkedMessage(log, s, l.db, parsedURL, i.GuildID, i.ChannelID)
 		if err != nil {
-			log.WithError(err).Error("could not get content to link")
-			l.sendErrorResponse(s, i, log, err)
-			return
-		}
-
-		setting := db.GuildSetting{Enabled: false} // Default to False
-		err = l.db.Where(&db.GuildSetting{GuildID: i.GuildID, Setting: db.PageBreakEnabled}).First(&setting).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.WithError(err).Error("could not fetch guild settings")
-			l.sendErrorResponse(s, i, log, err)
-			return
-		}
-
-		embeds, err := buildEmbedContents(content, parsedURL, setting.Enabled)
-		if err != nil {
-			log.WithError(err).Error("could process link content")
-			l.sendErrorResponse(s, i, log, err)
-			return
-		}
-
-		msgIDs := []string{}
-		for _, emb := range embeds {
-			msg, err := s.ChannelMessageSendEmbed(i.ChannelID, emb)
-			if err != nil {
-				log.WithError(err).Error("could not send new linked message")
-				l.sendErrorResponse(s, i, log, err)
-				return
-			}
-
-			msgIDs = append(msgIDs, msg.ID)
-		}
-
-		err = l.db.Create(&db.LinkedMessage{
-			GuildID:    i.GuildID,
-			ChannelID:  i.ChannelID,
-			MessageID:  msgIDs[0],
-			MessageChain: msgIDs,
-			LinkedPage: datatypes.URL(*parsedURL),
-		}).Error
-		if err != nil {
-			log.WithError(err).Error("could not save message link")
+			metrics.CommandsFailed.With(prometheus.Labels{"command": "link"}).Inc()
+			log.WithError(err).Error("cloud not link new message")
 			l.sendErrorResponse(s, i, log, err)
 			return
 		}
@@ -107,7 +67,7 @@ func (l *LinkCommand) GetHandler() func(s *discordgo.Session, i *discordgo.Inter
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Flags:   discordgo.MessageFlagsEphemeral,
-				Content: fmt.Sprintf("New git linked message created: https://discord.com/channels/%s/%s/%s", i.GuildID, i.ChannelID, msgIDs[0]),
+				Content: fmt.Sprintf("New git linked message created: https://discord.com/channels/%s/%s/%s", i.GuildID, i.ChannelID, msgID),
 			},
 		})
 		if err != nil {
