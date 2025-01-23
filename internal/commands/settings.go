@@ -99,7 +99,7 @@ func (sc *SettingsCommand) sendErrorResponse(s *discordgo.Session, i *discordgo.
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintf("There was a problem creating your linked git message: %s", err.Error()),
+			Content: fmt.Sprintf("There was a problem updating your guild settings: %s", err.Error()),
 		},
 	})
 	if err != nil {
