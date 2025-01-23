@@ -11,6 +11,7 @@ type Setting string
 
 const (
 	PageBreakEnabled Setting = "page-break"
+	MessageAutoUpdateRate Setting = "update-rate"
 )
 
 var defaultSettings = map[Setting]GuildSetting{
@@ -19,6 +20,12 @@ var defaultSettings = map[Setting]GuildSetting{
 		UpdatedAt: time.Now(),
 		Setting:   PageBreakEnabled,
 		Enabled:   true,
+	},
+	MessageAutoUpdateRate: {
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Setting: MessageAutoUpdateRate,
+		DurationValue: time.Hour,
 	},
 }
 

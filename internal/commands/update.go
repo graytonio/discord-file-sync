@@ -36,17 +36,20 @@ func (u *UpdateCommand) GetDefinition() *discordgo.ApplicationCommand {
 // GetHandler implements SlashCommand.
 func (u *UpdateCommand) GetHandler() func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		
+
+		opts := commandOptionsToMap(i.ApplicationCommandData().Options)
+
+		messageID := stripDiscordLinkMessageID(opts["message"].StringValue())
+
 		log := logrus.WithFields(logrus.Fields{
 			"command":        "update",
 			"user":           i.Member.User.ID,
 			"guild":          i.GuildID,
 			"interaction_id": i.ID,
+			"message_id": messageID,
 		})
 		log.Info("updating linked message")
-
-		opts := commandOptionsToMap(i.ApplicationCommandData().Options)
-
-		messageID := stripDiscordLinkMessageID(opts["message"].StringValue())
 
 		err := manager.UpdateMessage(log, s, u.db, i.GuildID, i.ChannelID, messageID)
 		if err != nil {

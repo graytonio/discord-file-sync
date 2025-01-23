@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/graytonio/discord-git-sync/internal/db"
@@ -17,7 +18,7 @@ import (
 type DiscordSessionInterface interface {
 	ChannelMessageSendEmbed(channelID string, embed *discordgo.MessageEmbed, options ...discordgo.RequestOption) (*discordgo.Message, error)
 	ChannelMessageEditEmbed(channelID string, messageID string, embed *discordgo.MessageEmbed, options ...discordgo.RequestOption) (*discordgo.Message, error)
-	ChannelMessageDelete(embedID string, messageID string, options ...discordgo.RequestOption) (error)
+	ChannelMessageDelete(embedID string, messageID string, options ...discordgo.RequestOption) error
 }
 
 // Fetches url content, builds embed object based on guild settings, and sends new embed message
@@ -51,12 +52,19 @@ func CreateNewLinkedMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn
 		msgIDs[i] = msg.ID
 	}
 
+	updateRateSetting, err := db.GetGuildSetting(dbConn, guildID, db.MessageAutoUpdateRate)
+	if err != nil {
+		log.WithError(err).Error("could not fetch guild settings")
+		return "", err
+	}
+
 	err = dbConn.Create(&db.LinkedMessage{
 		GuildID:      guildID,
 		ChannelID:    channelID,
 		MessageID:    msgIDs[0],
 		MessageChain: msgIDs,
 		LinkedPage:   datatypes.URL(*contentURL),
+		NextUpdate: time.Now().Add(updateRateSetting.DurationValue),
 	}).Error
 	if err != nil {
 		log.WithError(err).Error("cloud not save message data in db")
@@ -124,6 +132,13 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 		}
 	}
 
+	updateRateSetting, err := db.GetGuildSetting(dbConn, guildID, db.MessageAutoUpdateRate)
+	if err != nil {
+		log.WithError(err).Error("could not fetch guild settings")
+		return err
+	}
+
+	linkedMessage.NextUpdate = time.Now().Add(updateRateSetting.DurationValue)
 	linkedMessage.MessageChain = msgIds
 	linkedMessage.MessageID = msgIds[0]
 	err = dbConn.Save(&linkedMessage).Error
