@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	gormlock "github.com/go-co-op/gocron-gorm-lock"
 	"gorm.io/datatypes"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -25,11 +26,11 @@ func (mc *MessageChain) Scan(src any) error {
 
 func (mc MessageChain) Value() (driver.Value, error) {
 	if len(mc) == 0 {
-	 return nil, nil
+		return nil, nil
 	}
-	
+
 	return strings.Join(mc, ","), nil
-   }
+}
 
 type LinkedMessage struct {
 	gorm.Model
@@ -38,6 +39,7 @@ type LinkedMessage struct {
 	MessageID    string       `gorm:"index"`
 	MessageChain MessageChain `gorm:"type:TEXT"`
 	LinkedPage   datatypes.URL
+	NextUpdate   time.Time `gorm:"index"`
 }
 
 type GuildSetting struct {
@@ -47,18 +49,19 @@ type GuildSetting struct {
 	GuildID   string         `gorm:"primaryKey"`
 	Setting   Setting        `gorm:"primaryKey"`
 	Enabled   bool
+	DurationValue time.Duration
 }
 
 func InitDB(dsn string) (*gorm.DB, error) {
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		Logger:                                   logger.Default.LogMode(logger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.AutoMigrate(&LinkedMessage{}, &GuildSetting{})
+	err = db.AutoMigrate(&LinkedMessage{}, &GuildSetting{}, &gormlock.CronJobLock{})
 	if err != nil {
 		return nil, err
 	}

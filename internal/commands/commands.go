@@ -43,6 +43,9 @@ func CreateCommands(s *discordgo.Session, db *gorm.DB, guildID string) error {
 
 func HandleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+		logrus.WithField("command", i.ApplicationCommandData().Name).Debug("handling command")
 		h(s, i)
+	} else {
+		logrus.WithField("command", i.ApplicationCommandData().Name).Error("no command found")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/graytonio/discord-git-sync/internal/bot"
 	"github.com/graytonio/discord-git-sync/internal/db"
 	"github.com/graytonio/discord-git-sync/internal/metrics"
+	"github.com/graytonio/discord-git-sync/internal/scheduler"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,11 +18,19 @@ func main() {
 	  logrus.WithError(err).Fatal("could not connect to db")
 	}
 
+	
+
 	s, err := bot.InitBot(os.Getenv("DISCORD_BOT_TOKEN"), dbConn, os.Getenv("TEST_GUILD_ID"))
 	if err != nil {
 		logrus.WithError(err).Fatal("could not start bot")
 	}
 	defer s.Close()
+
+	scheduler, err := scheduler.InitJobScheduler(dbConn, s)
+	if err != nil {
+	  logrus.WithError(err).Fatal("could not init cron tasks")
+	}
+	defer scheduler.Shutdown()
 
 	go metrics.StartMetrics()
 
