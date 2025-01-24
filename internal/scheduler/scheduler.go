@@ -30,6 +30,7 @@ func InitJobScheduler(db *gorm.DB, s manager.DiscordSessionInterface) (gocron.Sc
 		gocron.CronJob("*/5 * * * *", false), // TODO Configurable
 		gocron.NewTask(fetchAndDispatchMessageUpdates, db, scheduler, s),
 	)
+	
 	scheduler.Start()
 
 	return scheduler, nil
