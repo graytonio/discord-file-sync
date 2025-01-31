@@ -51,7 +51,7 @@ func fetchAndDispatchMessageUpdates(dbConn *gorm.DB, scheduler gocron.Scheduler,
 			"message_id": m.MessageID,
 		})
 
-		log.Info("auto updating linked message")
+		log.Debug("auto updating linked message")
 
 		scheduler.NewJob(
 			gocron.OneTimeJob(gocron.OneTimeJobStartImmediately()),
