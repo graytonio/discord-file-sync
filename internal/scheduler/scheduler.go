@@ -26,7 +26,10 @@ func InitJobScheduler(db *gorm.DB, s manager.DiscordSessionInterface) (gocron.Sc
 	//   return err
 	// }
 	
-	scheduler, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
+	scheduler, err := gocron.NewScheduler(
+		gocron.WithLocation(time.UTC),
+		// TODO(maint) Add prometheus monitor
+	)
 	if err != nil {
 	  return nil, err
 	}
