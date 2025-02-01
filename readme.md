@@ -2,10 +2,14 @@
 
 A discord bot able to create and live update webpage embeds in channels.
 
-TODO Add example screenshot
+TODO(docs) Add Discord invite link
 
-Roadmap:
+TODO(docs) Add Website Link
 
-- [ ] Add automatic update timers
-- [ ] Support messages longer than 6000 characters
-- [ ] Support message links for update command
+TODO(docs) Add example screenshot
+
+Features:
+
+- Link existing text into discord without needing to copy and paste
+- Keep live updated messages in channel without needing to maintain them
+- Collaborate on announcement messages or documentation

@@ -1,11 +1,16 @@
 package scheduler
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
+	"github.com/google/uuid"
 	"github.com/graytonio/discord-git-sync/internal/db"
 	"github.com/graytonio/discord-git-sync/internal/manager"
+	"github.com/graytonio/discord-git-sync/internal/metrics"
+	"github.com/graytonio/discord-git-sync/internal/utils"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -16,7 +21,7 @@ import (
 
 func InitJobScheduler(db *gorm.DB, s manager.DiscordSessionInterface) (gocron.Scheduler, error) {
 	var err error
-	// locker, err := gormlock.NewGormLocker(db, os.Getenv("WORKER_ID")) // TODO Update dependency after bump
+	// locker, err := gormlock.NewGormLocker(db, os.Getenv("WORKER_ID")) // TODO(roadmap) Update dependency after bump
 	// if err != nil {
 	//   return err
 	// }
@@ -27,8 +32,10 @@ func InitJobScheduler(db *gorm.DB, s manager.DiscordSessionInterface) (gocron.Sc
 	}
 
 	scheduler.NewJob(
-		gocron.CronJob("*/5 * * * *", false), // TODO Configurable
+		gocron.CronJob(utils.GetEnv("UPDATE_TASK_CRON", "*/5 * * * *"), false),
 		gocron.NewTask(fetchAndDispatchMessageUpdates, db, scheduler, s),
+		gocron.WithName("message-batch-collection"),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
 	
 	scheduler.Start()
@@ -52,10 +59,18 @@ func fetchAndDispatchMessageUpdates(dbConn *gorm.DB, scheduler gocron.Scheduler,
 		})
 
 		log.Debug("auto updating linked message")
-
 		scheduler.NewJob(
 			gocron.OneTimeJob(gocron.OneTimeJobStartImmediately()),
 			gocron.NewTask(manager.UpdateMessage, log, s, dbConn, m.GuildID, m.ChannelID, m.MessageID),
+			gocron.WithName(fmt.Sprintf("message-update-%s", m.MessageID)),
+			gocron.WithEventListeners(
+				gocron.AfterJobRuns(func(jobID uuid.UUID, jobName string) {
+					metrics.CommandsServed.With(prometheus.Labels{"command": "auto-update"}).Inc()
+				}),
+				gocron.AfterJobRunsWithError(func(jobID uuid.UUID, jobName string, err error) {
+					metrics.CommandsFailed.With(prometheus.Labels{"command": "auto-update"}).Inc()
+				}),
+			),
 		)
 	}
 }

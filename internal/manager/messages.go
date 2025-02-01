@@ -64,7 +64,7 @@ func CreateNewLinkedMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn
 		MessageID:    msgIDs[0],
 		MessageChain: msgIDs,
 		LinkedPage:   datatypes.URL(*contentURL),
-		NextUpdate: time.Now().Add(updateRateSetting.DurationValue),
+		NextUpdate:   time.Now().Add(updateRateSetting.DurationValue),
 	}).Error
 	if err != nil {
 		log.WithError(err).Error("cloud not save message data in db")
@@ -102,7 +102,7 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 		log.WithError(err).Error("could not build embed objects")
 		return err
 	}
-
+	
 	msgIds := make([]string, len(embeds))
 	for i, e := range embeds {
 		var msg *discordgo.Message
@@ -113,6 +113,13 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 		}
 
 		if err != nil {
+			if restErr, ok := err.(*discordgo.RESTError); ok {
+				err = handleRESTErrors(log, s, dbConn, &linkedMessage, restErr)
+				if err == nil {
+					return nil
+				}
+			}
+			
 			log.WithError(err).Error("could not update message chain")
 			return err
 		}
@@ -150,6 +157,21 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 	return nil
 }
 
+func handleRESTErrors(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB, linkedMessage *db.LinkedMessage, err *discordgo.RESTError) error {
+	log.Debug("handling rest error")
+	switch err.Message.Code {
+	case discordgo.ErrCodeUnknownMessage:
+		log.Debug("deleting stale message")
+		return dbConn.Delete(linkedMessage).Error
+	case discordgo.ErrCodePerformedOperationOnArchivedThread: 
+		// TODO(roadmap) Figure out what to do about archived threads
+	default:
+		log.WithError(err).Warn("unknown rest error")
+		return err
+	}
+	return nil
+}
+
 // Fetch content of url as string
 func fetchPage(log *logrus.Entry, link *url.URL) (string, error) {
 	res, err := http.Get(link.String())
@@ -168,7 +190,7 @@ func fetchPage(log *logrus.Entry, link *url.URL) (string, error) {
 	return string(body), nil
 }
 
-var pageBreakFinder = regexp.MustCompile(`(?m)^-{3,}$`) // TODO Remove need for regex
+var pageBreakFinder = regexp.MustCompile(`(?m)^-{3,}$`) // TODO(maint) Remove need for regex
 
 // Break raw page content into embed blocks to send or update
 func buildEmbedContents(content string, link *url.URL, pageBreakSetting bool) ([]*discordgo.MessageEmbed, error) {

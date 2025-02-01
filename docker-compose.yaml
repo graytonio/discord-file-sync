@@ -7,7 +7,9 @@ services:
     env_file:
       - .env
     environment:
-      MYSQL_DB_DSN: discordgit:password@tcp(db:3306)/discordgit?charset=utf8mb4&parseTime=True&loc=UTC
+      LOG_LEVEL: DEBUG
+      UPDATE_TASK_CRON: "* * * * *"
+      MYSQL_DB_DSN: discordgit:password@tcp(db:3306)/discordgit?charset=utf8mb4&parseTime=True&loc=UTC\
     ports:
       - 2112:2112
     depends_on:
