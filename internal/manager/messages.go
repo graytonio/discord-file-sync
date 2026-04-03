@@ -134,6 +134,10 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 
 		err = s.ChannelMessageDelete(linkedMessage.ChannelID, m)
 		if err != nil {
+			if restErr, ok := err.(*discordgo.RESTError); ok && restErr.Message.Code == discordgo.ErrCodeUnknownMessage {
+				log.Debug("skipping delete of already-deleted message")
+				continue
+			}
 			log.WithError(err).Error("could not clean up message chain")
 			return err
 		}
@@ -159,11 +163,15 @@ func UpdateMessage(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB
 
 func handleRESTErrors(log *logrus.Entry, s DiscordSessionInterface, dbConn *gorm.DB, linkedMessage *db.LinkedMessage, err *discordgo.RESTError) error {
 	log.Debug("handling rest error")
+	if err.Message == nil {
+		log.WithError(err).Warn("rest error with no message body")
+		return err
+	}
 	switch err.Message.Code {
-	case discordgo.ErrCodeUnknownMessage:
+	case discordgo.ErrCodeUnknownMessage, discordgo.ErrCodeUnknownChannel:
 		log.Debug("deleting stale message")
 		return dbConn.Delete(linkedMessage).Error
-	case discordgo.ErrCodePerformedOperationOnArchivedThread: 
+	case discordgo.ErrCodePerformedOperationOnArchivedThread:
 		// TODO(roadmap) Figure out what to do about archived threads
 	default:
 		log.WithError(err).Warn("unknown rest error")
